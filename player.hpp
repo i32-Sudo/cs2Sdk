@@ -68,14 +68,6 @@ struct CSEntity {
 	char name[128];
 };
 
-struct Quaternion { float x, y, z, w; };
-struct CBoneData
-{
-	Vector3 location;
-	float scale;
-	Quaternion rotation;
-};
-
 class Player {
 private:
 
@@ -85,7 +77,7 @@ public:
 	uintptr_t entity_list = NULL;
 	uintptr_t listEntry = NULL;
 	uintptr_t entityController = NULL;
-	uintptr_t entityControllerPawn = NULL;
+	std::uint32_t entityControllerPawn = NULL;
 
 	uintptr_t entity = NULL;
 	uintptr_t CGameSceneNode = NULL;
@@ -93,7 +85,7 @@ public:
 	int m_iHealth = 0;
 	int m_iTeamNum = 0;
 	bool m_iSpotted = false;
-	
+
 	Vector3 origin;
 	std::string name;
 
@@ -101,28 +93,47 @@ public:
 	Bones3D Bones3D;
 
 	Player(int IndexID) {
-		this->IndexID = IndexID;	
+		this->IndexID = IndexID;
 		this->modBase = Driver->ClientDLL;
+		LocalPlayer lp;
 
 		if (this->modBase == NULL) return;
 
 		this->entity_list = Driver->RPM<uintptr_t>(this->modBase + offsets::client_dll::dwEntityList);
 		if (this->entity_list == NULL) return;
 		// Entity Initialization
-		this->listEntry = Driver->RPM<uintptr_t>(this->entity_list + (8 * (IndexID & 0x7FFF) >> 9) + 16);
+		this->listEntry = Driver->RPM<uintptr_t>(this->entity_list + ((8 * (IndexID & 0x7FFF) >> 9) + 16));
 		if (this->listEntry == NULL) return;
 
-		this->entity = Driver->RPM<uintptr_t>(this->listEntry + 120 * (this->entityControllerPawn & 0x1ff));
+
+		this->entityController = Driver->RPM<uintptr_t>(this->listEntry + 120 * (this->IndexID & 0x1ff));
+		if (this->entityController == NULL) return;
+
+		this->entityControllerPawn = Driver->RPM<std::uint32_t>(this->entityController + schemas::client_dll::CCSPlayerController::m_hPlayerPawn);
+		if (this->entityControllerPawn == NULL) return;
+
+		uintptr_t list_entry2 = Driver->RPM<uintptr_t>(this->entity_list + 0x8 * ((this->entityControllerPawn & 0x7FFF) >> 9) + 16);
+		if (list_entry2 == NULL) return;
+
+		this->entity = Driver->RPM<uintptr_t>(list_entry2 + 120 * (this->entityControllerPawn & 0x1FF));
 		if (this->entity == NULL) return;
+
+		if (this->entity == lp.LocalPlayerPtr) {
+			this->entity = NULL;
+			return;
+		}
 		// Initialize Basic Values
 		this->m_iHealth = Driver->RPM<int>(this->entity + schemas::client_dll::C_BaseEntity::m_iHealth);
+		
 		this->m_iTeamNum = Driver->RPM<int>(this->entity + schemas::client_dll::C_BaseEntity::m_iTeamNum);
+		if (this->m_iTeamNum == lp.m_iTeamNum) return;
 
 		this->CGameSceneNode = Driver->RPM<uintptr_t>(this->entity + schemas::client_dll::C_BaseEntity::m_pGameSceneNode);
+		if (this->CGameSceneNode == NULL) return;
 		this->BoneArray = Driver->RPM<uintptr_t>(this->CGameSceneNode + schemas::client_dll::CSkeletonInstance::m_modelState + 0x80);
 
 		this->m_iSpotted = Driver->RPM<bool>(this->entity + schemas::client_dll::C_CSPlayerPawn::m_entitySpottedState + schemas::client_dll::EntitySpottedState_t::m_bSpotted);
-		
+
 		this->origin = Driver->RPM<Vector3>(this->BoneArray + 6 * 32);
 
 		uintptr_t entityNameAddress = Driver->RPM<uintptr_t>(this->entityController + schemas::client_dll::CCSPlayerController::m_sSanitizedPlayerName);
@@ -144,9 +155,13 @@ public:
 	}
 
 	void Cache3DBones() {
-		if (this->BoneArray == NULL) {
-			return;
-		}
+		struct Quaternion { float x, y, z, w; };
+		struct CBoneData
+		{
+			Vector3 location;
+			float scale;
+			Quaternion rotation;
+		};
 
 		std::array<CBoneData, 30> boneArray;
 		Driver->ReadProcessMemory((PVOID)this->BoneArray, boneArray.data(), sizeof(CBoneData) * 30);
@@ -163,12 +178,26 @@ public:
 		this->Bones3D.AkneesL = { boneArray[26].location.x, boneArray[26].location.y, boneArray[26].location.z };
 		this->Bones3D.AfeetR = { boneArray[24].location.x, boneArray[24].location.y, boneArray[24].location.z };
 		this->Bones3D.AfeetL = { boneArray[27].location.x, boneArray[27].location.y, boneArray[27].location.z };
+
+
+		// if (this->BoneArray == NULL) return;
+		// if (this->BoneArray == NULL) return; this->Bones3D.Ahead = Driver->RPM<Vector3>(this->BoneArray + 6 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.Acou = Driver->RPM<Vector3>(this->BoneArray + 5 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AshoulderR = Driver->RPM<Vector3>(this->BoneArray + 8 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AshoulderL = Driver->RPM<Vector3>(this->BoneArray + 13 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AbrasR = Driver->RPM<Vector3>(this->BoneArray + 9 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AbrasL = Driver->RPM<Vector3>(this->BoneArray + 14 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AhandR = Driver->RPM<Vector3>(this->BoneArray + 11 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AhandL = Driver->RPM<Vector3>(this->BoneArray + 16 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.Acock = Driver->RPM<Vector3>(this->BoneArray + 0 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AkneesR = Driver->RPM<Vector3>(this->BoneArray + 23 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AkneesL = Driver->RPM<Vector3>(this->BoneArray + 26 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AfeetR = Driver->RPM<Vector3>(this->BoneArray + 24 * 32);
+		// if (this->BoneArray == NULL) return; this->Bones3D.AfeetL = Driver->RPM<Vector3>(this->BoneArray + 27 * 32);
 	}
 
 	void Cache2DBones(Camera CameraObject) {
-		if (this->BoneArray == NULL) {
-			return;
-		}
+		if (this->BoneArray == NULL) return;
 		// I'll fix this later
 		Vector3 Head2D; CameraObject.w2s(this->Bones3D.Ahead, Head2D, CameraObject.ViewMatrix);
 		Vector3 Cou2D; CameraObject.w2s(this->Bones3D.Acou, Cou2D, CameraObject.ViewMatrix);
